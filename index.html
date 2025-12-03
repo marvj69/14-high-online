@@ -13,6 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-Mq40cM4PtFWvn74eR6ywyqJES10MvlD0xVoqs+Zx44ULxXJ/8zrXMUbCEpJ86jV9L+G8pPkikdNEnK2WsykLRA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     /* Modern CSS Reset and Base Styles */
     :root {
@@ -167,6 +168,56 @@
     [data-theme="dark"] .card {
       background-color: var(--light-alt);
       border-color: var(--gray-dark);
+    }
+
+    /* QR sharing card */
+    .share-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .share-description {
+      color: var(--gray);
+      font-size: 0.95rem;
+    }
+
+    .qr-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 1rem;
+      background: #ffffff;
+      border: 1px solid var(--gray-light);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+    }
+
+    [data-theme="dark"] .qr-wrapper {
+      background: var(--light);
+      border-color: var(--gray-dark);
+    }
+
+    #qr-code canvas, #qr-code img {
+      width: 200px;
+      height: 200px;
+    }
+
+    .qr-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .qr-actions button {
+      flex: none;
+    }
+
+    .qr-error {
+      color: var(--danger);
+      text-align: center;
+      width: 100%;
     }
 
     /* Form elements */
@@ -1449,6 +1500,23 @@
   <div class="container">
     <h1>14-High! <span style="font-size: 1rem; vertical-align: middle; color: var(--secondary);">(Online)</span></h1>
 
+    <div class="card share-card" id="share-card">
+      <h2><i class="fas fa-qrcode"></i> Share this game</h2>
+      <p class="share-description">Scan the QR code below on another device to open the live scoreboard.</p>
+      <div class="qr-wrapper">
+        <div id="qr-code" aria-label="Shareable QR code"></div>
+      </div>
+      <label class="form-label" for="share-link" style="font-weight: 600;">Share link</label>
+      <div class="input-group">
+        <input id="share-link" type="text" readonly aria-label="Share link">
+      </div>
+      <div class="qr-actions">
+        <button id="copy-link-btn" class="secondary" type="button"><i class="fas fa-copy"></i> Copy link</button>
+        <button id="refresh-qr-btn" class="secondary" type="button"><i class="fas fa-rotate"></i> Refresh QR</button>
+      </div>
+      <div id="qr-feedback" class="text-small" style="color: var(--gray);"></div>
+    </div>
+
     <div id="app">
       {/* Content will be dynamically inserted here */}
       {/* Placeholder while JS loads */}
@@ -1581,6 +1649,11 @@
     const gameDetailsModal = document.getElementById('game-details-modal');
     const gameDetailsClose = document.getElementById('game-details-close');
     const gameDetailsBody = document.getElementById('game-details-body');
+    const qrContainer = document.getElementById('qr-code');
+    const shareLinkInput = document.getElementById('share-link');
+    const copyLinkBtn = document.getElementById('copy-link-btn');
+    const refreshQrBtn = document.getElementById('refresh-qr-btn');
+    const qrFeedback = document.getElementById('qr-feedback');
 
     // --- Initialization ---
     let firebaseConnected = false;
@@ -1599,6 +1672,80 @@
     const savedTheme = localStorage.getItem('theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
+
+    // --- QR Sharing ---
+    function getShareUrl() {
+      const url = new URL(window.location.href);
+      url.hash = '';
+      return url.toString();
+    }
+
+    function renderQrCode(url) {
+      if (!qrContainer) return;
+      qrContainer.innerHTML = '';
+      try {
+        new QRCode(qrContainer, {
+          text: url,
+          width: 200,
+          height: 200,
+          colorDark: '#111827',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.H
+        });
+        if (qrFeedback) {
+          qrFeedback.textContent = 'Ready to scan.';
+          qrFeedback.style.color = 'var(--gray)';
+        }
+      } catch (error) {
+        console.error('Failed to render QR code', error);
+        qrContainer.innerHTML = '<div class="qr-error">Unable to generate QR code. Please try again.</div>';
+        if (qrFeedback) {
+          qrFeedback.textContent = 'QR generation failed.';
+          qrFeedback.style.color = 'var(--danger)';
+        }
+      }
+    }
+
+    function initQrSharing() {
+      if (!qrContainer || !shareLinkInput) return;
+
+      const shareUrl = getShareUrl();
+      shareLinkInput.value = shareUrl;
+      renderQrCode(shareUrl);
+
+      if (copyLinkBtn) {
+        copyLinkBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            if (qrFeedback) {
+              qrFeedback.textContent = 'Link copied to clipboard.';
+              qrFeedback.style.color = 'var(--success)';
+            }
+          } catch (err) {
+            console.error('Copy failed', err);
+            shareLinkInput.select();
+            if (qrFeedback) {
+              qrFeedback.textContent = 'Copy failed. Press Ctrl+C to copy manually.';
+              qrFeedback.style.color = 'var(--danger)';
+            }
+          }
+        });
+      }
+
+      if (refreshQrBtn) {
+        refreshQrBtn.addEventListener('click', () => {
+          const latestUrl = getShareUrl();
+          shareLinkInput.value = latestUrl;
+          renderQrCode(latestUrl);
+          if (qrFeedback) {
+            qrFeedback.textContent = 'QR refreshed. Try scanning again.';
+            qrFeedback.style.color = 'var(--gray)';
+          }
+        });
+      }
+    }
+
+    initQrSharing();
 
     // --- Firebase Listener ---
     gameRef.on('value', (snapshot) => {
